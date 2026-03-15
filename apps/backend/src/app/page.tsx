@@ -106,13 +106,12 @@ export default function Home() {
     };
   }, []);
 
-  // Socket.IO connection
+  // Socket.IO connection (connects to separate WS server)
   useEffect(() => {
-    const socket = io({
-      autoConnect: false,
-      reconnectionAttempts: 3,
-      timeout: 5000,
-    });
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "";
+    const socket = wsUrl
+      ? io(wsUrl, { autoConnect: false, reconnectionAttempts: 3, timeout: 5000 })
+      : io({ autoConnect: false, reconnectionAttempts: 3, timeout: 5000 });
 
     socket.on("connect", () => setWsConnected(true));
     socket.on("disconnect", () => setWsConnected(false));
