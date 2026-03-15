@@ -9,15 +9,13 @@ Built with Meta Wearables Device Access Toolkit, Gemini, and OpenAI.
 ```
 apps/
 ├── ios/          # iOS app (SwiftUI) — Camera Access + LensLingo
-├── backend/      # Next.js frontend + REST API (Vercel)
-└── ws-server/    # Socket.IO WebSocket server (Railway)
+└── backend/      # Node.js/Next.js backend — REST + WebSocket API
 ```
 
-| Project | Stack | Deploy | Docs |
-|---------|-------|--------|------|
-| [iOS App](apps/ios/) | Swift, SwiftUI, Meta DAT SDK | Xcode | [README](apps/ios/README.md) |
-| [Backend](apps/backend/) | Next.js, REST API, Gemini, OpenAI | Vercel | [README](apps/backend/README.md) |
-| [WS Server](apps/ws-server/) | Socket.IO, Gemini, OpenAI | Railway | [README](apps/ws-server/README.md) |
+| Project | Stack | Docs |
+|---------|-------|------|
+| [iOS App](apps/ios/) | Swift, SwiftUI, AVFoundation, Meta DAT SDK | [README](apps/ios/README.md) |
+| [Backend](apps/backend/) | Next.js, Socket.IO, OpenAI, Gemini | [README](apps/backend/README.md) |
 
 ## Quick Start
 
@@ -27,7 +25,9 @@ apps/
 open apps/ios/CameraAccess.xcodeproj
 ```
 
-### Backend (Vercel)
+See [apps/ios/README.md](apps/ios/README.md) for full setup.
+
+### Backend
 
 ```bash
 cd apps/backend
@@ -37,15 +37,7 @@ npm install
 npm run dev
 ```
 
-### WebSocket Server (Railway)
-
-```bash
-cd apps/ws-server
-cp .env.example .env
-# Add your GEMINI_API_KEY and CHATGPT_API_KEY to .env
-npm install
-npm run dev
-```
+See [apps/backend/README.md](apps/backend/README.md) for API docs.
 
 ## Architecture
 
@@ -54,22 +46,10 @@ Meta AI Glasses / iPhone
         ↓
 iOS App (SwiftUI + Meta DAT SDK)
         ↓
-   ┌────┴────┐
-   ↓         ↓
-Vercel     Railway
-(REST)     (WebSocket)
-   ↓         ↓
-   └────┬────┘
+Backend API (Next.js + Socket.IO)
         ↓
 Gemini (primary) / ChatGPT (fallback)
 ```
-
-## Deployment
-
-| Service | Platform | Notes |
-|---------|----------|-------|
-| Backend | Vercel | REST API + Test UI. Set `NEXT_PUBLIC_WS_URL` to Railway URL |
-| WS Server | Railway | WebSocket for real-time audio/chat. Set API keys in env vars |
 
 ## Meta Wearables DAT SDK
 
