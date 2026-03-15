@@ -34,7 +34,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [imageCheckResult, setImageCheckResult] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "audio" | "image-check">("chat");
-  const [transport, setTransport] = useState<TransportMode>("websocket");
+  const [transport, setTransport] = useState<TransportMode>("rest");
   const [wsConnected, setWsConnected] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<number | null>(null);
@@ -108,10 +108,19 @@ export default function Home() {
 
   // Socket.IO connection
   useEffect(() => {
-    const socket = io({ autoConnect: false });
+    const socket = io({
+      autoConnect: false,
+      reconnectionAttempts: 3,
+      timeout: 5000,
+    });
 
     socket.on("connect", () => setWsConnected(true));
     socket.on("disconnect", () => setWsConnected(false));
+    socket.on("connect_error", () => {
+      setWsConnected(false);
+      // Auto-fallback to REST if WS can't connect
+      setTransport("rest");
+    });
 
     socket.on("generate:result", (data: {
       requestId: string;
