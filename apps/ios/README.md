@@ -1,69 +1,149 @@
-# Camera Access App
+# LensLingo — iOS App
 
-A sample iOS application demonstrating integration with Meta Wearables Device Access Toolkit. This app showcases streaming video from Meta AI glasses, capturing photos, and managing connection states.
+AI assistant and real-time translator for Meta AI glasses — or your iPhone camera.
 
 ## Features
 
-- Connect to Meta AI glasses
-- Stream camera feed from the device
-- Capture photos from glasses
-- Timer-based streaming sessions
-- Share captured photos
+### AI Assistant Mode
+- Stream video from Meta AI glasses or iPhone camera
+- Voice-activated AI questions with auto-listening
+- Image analysis — AI sees what your camera sees
+- Gemini (primary) with ChatGPT fallback
+- Text-to-speech responses
+- Manual Start/Stop and Send Screen controls
+
+### Translation Mode
+- Real-time speech translation between 10 languages
+- Source & target language pickers with swap
+- Audio playback of translations (via wordzzz.app)
+- Image translation — point camera at text to translate
+- Auto-listening with continuous recognition (restarts per phrase)
+- Translation examples and transcriptions
+- TTS pronunciation of translations
+
+### iPhone Camera Fallback
+- Works without Meta AI glasses connected
+- Uses iPhone back camera for video and image analysis
+- Full AI assistant and translation features available
+- Seamless switch — glasses take priority when connected
+
+### Lock Screen & Background
+- Background mode support (audio, Bluetooth, external accessory)
+- Local notifications for AI responses and translations when backgrounded
+- TTS continues playing on lock screen
+- Notification permission requested on first launch
+
+### General
+- Bluetooth connectivity to Meta AI glasses
+- Photo capture and sharing
+- Energy-saving mode (disable video display)
+- Mode picker (AI Assistant / Translation) with persistence
 
 ## Prerequisites
 
 - iOS 17.0+
 - Xcode 14.0+
 - Swift 5.0+
-- Meta Wearables Device Access Toolkit (included as a dependency)
-- A Meta AI glasses device for testing (optional for development)
+- Meta Wearables Device Access Toolkit (included as dependency)
+- Meta AI glasses for full experience (iPhone camera fallback available)
 
-## Backend Configuration
+## Setup
 
-The app connects to the LensLingo backend via REST API. Configure the backend token:
+### 1. Open the project
+
+```bash
+open CameraAccess.xcodeproj
+```
+
+### 2. Configure backend token
+
+The app connects to the LensLingo backend at `https://lense-lingo.vercel.app`.
 
 **Option A: Xcode build setting (recommended)**
 
-1. In Xcode, select the **CameraAccess** target
-1. Go to **Build Settings** > click **+** > **Add User-Defined Setting**
-1. Name it `BACKEND_API_TOKEN` and set the value to your `SITE_PASSWORD` from Vercel
+1. Select the **CameraAccess** target
+2. Go to **Build Settings** > click **+** > **Add User-Defined Setting**
+3. Name it `BACKEND_API_TOKEN` and set it to your `SITE_PASSWORD` from Vercel
 
 **Option B: Hardcode in Info.plist**
-
-Set the `BACKEND_API_TOKEN` value directly in `Info.plist`:
 
 ```xml
 <key>BACKEND_API_TOKEN</key>
 <string>your-password-here</string>
 ```
 
-The backend URL is already set to `https://lense-lingo.vercel.app` in `Info.plist`.
+### 3. Build and run
 
-## Building the app
-
-### Using Xcode
-
-1. Clone this repository
-1. Open the project in Xcode
 1. Select your target device
-1. Click the "Build" button or press `Cmd+B` to build the project
-1. To run the app, click the "Run" button or press `Cmd+R`
+2. Press `Cmd+R` to build and run
 
-## Running the app
+## Usage
 
-1. Turn 'Developer Mode' on in the Meta AI app.
-1. Launch the app.
-1. Press the "Connect" button to complete app registration.
-1. Once connected, the camera stream from the device will be displayed
-1. Use the on-screen controls to:
-   - Set stream time limits
-   - Capture photos
-   - View and save captured photos
-   - Disconnect from the device
+### Getting Started
 
-## Troubleshooting
+1. Launch LensLingo
+2. **(Optional)** Turn **Developer Mode** on in the Meta AI app and press **Connect my glasses**
+3. Choose your mode: **AI Assistant** or **Translation**
+4. Press **Start streaming** (with glasses) or **Start with iPhone camera** (without)
 
-For issues related to the Meta Wearables Device Access Toolkit, please refer to the [developer documentation](https://wearables.developer.meta.com/docs/develop/) or visit our [discussions forum](https://github.com/facebook/meta-wearables-dat-ios/discussions)
+### AI Assistant Mode
+- Enable **Auto Listening** to have the AI respond to everything you say
+- Use **Start/Stop** for manual voice input
+- Tap **Send Screen** to send the current camera view to AI
+- Responses appear as notifications on lock screen
+
+### Translation Mode
+- Select source and target languages
+- Enable **Auto Listening** for continuous translation
+- Use **Start/Stop** for manual one-shot translation
+- Tap **Translate** (camera button) to translate text from the camera view
+- Tap the speaker icon to hear pronunciation or the mouth icon for TTS
+- Each phrase restarts recognition automatically (no accumulation)
+
+## Project Structure
+
+```
+CameraAccess/
+├── Models/
+│   ├── AppLanguage.swift            # AI mode languages (EN/RU/ES)
+│   └── AppMode.swift                # Mode enum (assistant/translation)
+├── ViewModels/
+│   ├── StreamSessionViewModel.swift # AI assistant + streaming + phone camera
+│   ├── TranslationViewModel.swift   # Translation mode logic
+│   └── WearablesViewModel.swift     # Device connection state
+├── Views/
+│   ├── NonStreamView.swift          # Pre-streaming setup with mode picker
+│   ├── StreamView.swift             # AI assistant streaming UI
+│   ├── TranslationStreamView.swift  # Translation streaming UI
+│   ├── TranslationView.swift        # Standalone translation UI
+│   └── StreamSessionView.swift      # View router (mode + streaming state)
+├── Services/
+│   ├── BackendService.swift         # REST client for AI backend
+│   ├── TranslationService.swift     # wordzzz.app API client
+│   ├── NotificationService.swift    # Local notifications for background
+│   └── PhoneCameraService.swift     # iPhone camera fallback via AVCaptureSession
+└── Info.plist                       # Permissions & configuration
+```
+
+## Permissions
+
+| Permission | Usage |
+|------------|-------|
+| Camera | iPhone camera fallback when glasses not connected |
+| Microphone | Speech recognition for voice input |
+| Speech Recognition | Converting speech to text |
+| Bluetooth | Connecting to Meta AI glasses |
+| Notifications | Showing responses on lock screen |
+
+## Translation API
+
+Translation is powered by [wordzzz.app](https://wordzzz.app):
+
+```
+GET https://wordzzz.app/api?word=hello&from=en&to=ru
+```
+
+Response includes translations, transcription, audio URL, and usage examples.
 
 ## License
 

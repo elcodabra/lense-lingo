@@ -19,6 +19,7 @@ import SwiftUI
 struct NonStreamView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var wearablesVM: WearablesViewModel
+  @Binding var appMode: AppMode
   @State private var sheetHeight: CGFloat = 300
   @State private var pulseAnimation = false
 
@@ -52,32 +53,37 @@ struct NonStreamView: View {
       VStack(spacing: 0) {
         // Top bar
         HStack {
-          // Language selector
-          Menu {
-            ForEach(AppLanguage.allCases.filter { $0 != .system }) { language in
-              Button {
-                wearablesVM.selectedLanguage = language
-              } label: {
-                HStack {
-                  Text(language.displayName)
-                  if wearablesVM.selectedLanguage == language {
-                    Image(systemName: "checkmark")
+          // Language selector (for AI mode)
+          if appMode == .assistant {
+            Menu {
+              ForEach(AppLanguage.allCases.filter { $0 != .system }) { language in
+                Button {
+                  wearablesVM.selectedLanguage = language
+                } label: {
+                  HStack {
+                    Text(language.displayName)
+                    if wearablesVM.selectedLanguage == language {
+                      Image(systemName: "checkmark")
+                    }
                   }
                 }
               }
+            } label: {
+              HStack(spacing: 5) {
+                Image(systemName: "globe")
+                  .font(.system(size: 13))
+                Text(wearablesVM.selectedLanguage.displayName)
+                  .font(.system(size: 13, weight: .medium))
+              }
+              .foregroundColor(.white.opacity(0.85))
+              .padding(.horizontal, 12)
+              .padding(.vertical, 7)
+              .background(Color.white.opacity(0.12))
+              .cornerRadius(20)
             }
-          } label: {
-            HStack(spacing: 5) {
-              Image(systemName: "globe")
-                .font(.system(size: 13))
-              Text(wearablesVM.selectedLanguage.displayName)
-                .font(.system(size: 13, weight: .medium))
-            }
-            .foregroundColor(.white.opacity(0.85))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.12))
-            .cornerRadius(20)
+          } else {
+            // Placeholder for alignment
+            Color.clear.frame(width: 1, height: 1)
           }
 
           Spacer()
@@ -149,11 +155,14 @@ struct NonStreamView: View {
               )
             )
 
-          Text("Stream Your Glasses Camera")
+          Text(appMode == .assistant ? "AI-Powered Smart Glasses" : "Real-time Translation")
             .font(.system(size: 17, weight: .medium))
             .foregroundColor(.white.opacity(0.9))
 
-          Text("Tap Start to stream video from your glasses\nor use the camera button to take a photo.")
+          Text(appMode == .assistant
+            ? "Ask questions, describe what you see,\nand get instant AI answers."
+            : "Speak or capture text to translate\nbetween languages in real time."
+          )
             .font(.system(size: 14))
             .multilineTextAlignment(.center)
             .foregroundColor(.white.opacity(0.5))
@@ -165,19 +174,20 @@ struct NonStreamView: View {
 
         // Status & controls
         VStack(spacing: 16) {
-          // Waiting indicator
+          // Connection status
           if !viewModel.hasActiveDevice {
             HStack(spacing: 8) {
-              ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                .scaleEffect(0.8)
-
-              Text("Waiting for an active device")
+              Image(systemName: "iphone")
                 .font(.system(size: 13))
-                .foregroundColor(.white.opacity(0.5))
+              Text("No glasses connected — will use iPhone camera")
+                .font(.system(size: 13))
             }
+            .foregroundColor(.white.opacity(0.5))
             .transition(.opacity)
           }
+
+          // Mode picker
+          modePicker
 
           // Video display toggle
           HStack {
@@ -206,7 +216,7 @@ struct NonStreamView: View {
               await viewModel.handleStartStreaming()
             }
           } label: {
-            Text("Start streaming")
+            Text(viewModel.hasActiveDevice ? "Start streaming" : "Start with iPhone camera")
               .font(.system(size: 16, weight: .semibold))
               .foregroundColor(.white)
               .frame(maxWidth: .infinity)
@@ -224,8 +234,6 @@ struct NonStreamView: View {
               .cornerRadius(28)
               .shadow(color: Color(red: 0.3, green: 0.5, blue: 1.0).opacity(0.3), radius: 12, y: 4)
           }
-          .disabled(!viewModel.hasActiveDevice)
-          .opacity(viewModel.hasActiveDevice ? 1.0 : 0.5)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 32)
@@ -240,6 +248,39 @@ struct NonStreamView: View {
         GettingStartedSheetView(height: $sheetHeight)
       }
     }
+  }
+
+  // MARK: - Mode Picker
+
+  private var modePicker: some View {
+    HStack(spacing: 0) {
+      ForEach(AppMode.allCases) { mode in
+        Button {
+          withAnimation(.easeInOut(duration: 0.2)) {
+            appMode = mode
+          }
+        } label: {
+          HStack(spacing: 6) {
+            Image(systemName: mode.icon)
+              .font(.system(size: 12))
+            Text(mode.displayName)
+              .font(.system(size: 13, weight: .medium))
+          }
+          .foregroundColor(appMode == mode ? .white : .white.opacity(0.5))
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 10)
+          .background(
+            appMode == mode
+              ? Color.white.opacity(0.15)
+              : Color.clear
+          )
+          .cornerRadius(12)
+        }
+      }
+    }
+    .padding(3)
+    .background(Color.white.opacity(0.08))
+    .cornerRadius(14)
   }
 }
 

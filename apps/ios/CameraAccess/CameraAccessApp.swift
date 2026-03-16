@@ -43,6 +43,7 @@ struct CameraAccessApp: App {
     let wearables = Wearables.shared
     self.wearables = wearables
     self._wearablesViewModel = StateObject(wrappedValue: WearablesViewModel(wearables: wearables))
+    NotificationService.shared.requestPermission()
   }
 
   var body: some Scene {

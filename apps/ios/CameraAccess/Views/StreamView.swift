@@ -20,6 +20,7 @@ import SwiftUI
 struct StreamView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var wearablesVM: WearablesViewModel
+  var onSwitchToTranslation: (() -> Void)?
 
   var body: some View {
     ZStack {
@@ -81,9 +82,29 @@ struct StreamView: View {
           }
           .padding(.top, 8)
           .padding(.leading, 24)
-          
+
+          // Translation mode button
+          if let onSwitch = onSwitchToTranslation {
+            Button {
+              onSwitch()
+            } label: {
+              HStack(spacing: 4) {
+                Image(systemName: "textformat.abc")
+                  .font(.system(size: 11))
+                Text("Translate")
+                  .font(.system(size: 11, weight: .medium))
+              }
+              .foregroundColor(.white.opacity(0.8))
+              .padding(.horizontal, 10)
+              .padding(.vertical, 6)
+              .background(Color.purple.opacity(0.5))
+              .cornerRadius(14)
+            }
+            .padding(.top, 8)
+          }
+
           Spacer()
-          
+
           // Stop streaming button (X icon) in top right corner
           Button {
             Task {

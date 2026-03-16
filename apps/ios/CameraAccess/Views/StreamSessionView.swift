@@ -18,6 +18,11 @@ struct StreamSessionView: View {
   let wearables: WearablesInterface
   @ObservedObject private var wearablesViewModel: WearablesViewModel
   @StateObject private var viewModel: StreamSessionViewModel
+  @StateObject private var translationVM = TranslationViewModel()
+  @State private var appMode: AppMode = {
+    let saved = UserDefaults.standard.string(forKey: "appMode") ?? "assistant"
+    return AppMode(rawValue: saved) ?? .assistant
+  }()
 
   init(wearables: WearablesInterface, wearablesVM: WearablesViewModel) {
     self.wearables = wearables
@@ -28,19 +33,32 @@ struct StreamSessionView: View {
   var body: some View {
     ZStack {
       if viewModel.isStreaming {
-        // Full-screen video view with streaming controls
-        StreamView(viewModel: viewModel, wearablesVM: wearablesViewModel)
+        switch appMode {
+        case .assistant:
+          StreamView(viewModel: viewModel, wearablesVM: wearablesViewModel, onSwitchToTranslation: { appMode = .translation })
+        case .translation:
+          TranslationStreamView(
+            translationVM: translationVM,
+            streamVM: viewModel,
+            wearablesVM: wearablesViewModel,
+            onSwitchToAssistant: { appMode = .assistant }
+          )
+        }
       } else {
-        // Pre-streaming setup view with permissions and start button
-        NonStreamView(viewModel: viewModel, wearablesVM: wearablesViewModel)
+        NonStreamView(
+          viewModel: viewModel,
+          wearablesVM: wearablesViewModel,
+          appMode: $appMode
+        )
       }
     }
     .onChange(of: wearablesViewModel.selectedLanguage) { oldValue, newValue in
-      // Update language when it changes in WearablesViewModel
-      // Always update language configuration, even if recognition is not active yet
       Task {
         await viewModel.updateLanguage(newValue)
       }
+    }
+    .onChange(of: appMode) { _, newMode in
+      UserDefaults.standard.set(newMode.rawValue, forKey: "appMode")
     }
     .alert("Error", isPresented: $viewModel.showError) {
       Button("OK") {

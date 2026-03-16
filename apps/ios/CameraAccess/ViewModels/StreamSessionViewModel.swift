@@ -75,6 +75,10 @@ class StreamSessionViewModel: ObservableObject {
   @Published var lastAIResponse: String = ""
   @Published var currentAIImage: UIImage? // Image currently being sent to AI
   
+  // Phone camera fallback when glasses aren't connected
+  @Published var isUsingPhoneCamera: Bool = false
+  private let phoneCameraService = PhoneCameraService()
+
   private var lastFinalizedText: String = ""
   private var currentAIResponseTask: Task<Void, Never>? // Track current AI response task for cancellation
 
@@ -97,7 +101,7 @@ class StreamSessionViewModel: ObservableObject {
   private var speechRecognizer: SFSpeechRecognizer?
   private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
   private var recognitionTask: SFSpeechRecognitionTask?
-  private let audioEngine = AVAudioEngine()
+  private var audioEngine = AVAudioEngine()
   private var isStartingSpeechRecognition: Bool = false
   private var isIntentionallyStopping: Bool = false
   
@@ -238,21 +242,55 @@ class StreamSessionViewModel: ObservableObject {
   }
 
   func handleStartStreaming() async {
-    let permission = Permission.camera
-    do {
-      let status = try await wearables.checkPermissionStatus(permission)
-      if status == .granted {
-        await startSession()
-        return
+    if hasActiveDevice {
+      // Glasses connected — use DAT SDK camera
+      let permission = Permission.camera
+      do {
+        let status = try await wearables.checkPermissionStatus(permission)
+        if status == .granted {
+          await startSession()
+          return
+        }
+        let requestStatus = try await wearables.requestPermission(permission)
+        if requestStatus == .granted {
+          await startSession()
+          return
+        }
+        showError("Permission denied")
+      } catch {
+        showError("Permission error: \(error.description)")
       }
-      let requestStatus = try await wearables.requestPermission(permission)
-      if requestStatus == .granted {
-        await startSession()
-        return
+    } else {
+      // No glasses — fall back to iPhone camera
+      await startPhoneCameraSession()
+    }
+  }
+
+  func startPhoneCameraSession() async {
+    let cameraAuth = await AVCaptureDevice.requestAccess(for: .video)
+    guard cameraAuth else {
+      showError("Camera permission denied")
+      return
+    }
+
+    activeTimeLimit = .noLimit
+    remainingTime = 0
+    stopTimer()
+
+    isUsingPhoneCamera = true
+    streamingStatus = .streaming
+
+    phoneCameraService.onFrame = { [weak self] image in
+      guard let self else { return }
+      self.currentVideoFrame = image
+      if !self.hasReceivedFirstFrame {
+        self.hasReceivedFirstFrame = true
       }
-      showError("Permission denied")
-    } catch {
-      showError("Permission error: \(error.description)")
+    }
+    phoneCameraService.start()
+
+    if autolistening {
+      await startSpeechRecognition()
     }
   }
 
@@ -261,6 +299,7 @@ class StreamSessionViewModel: ObservableObject {
     activeTimeLimit = .noLimit
     remainingTime = 0
     stopTimer()
+    isUsingPhoneCamera = false
 
     await streamSession.start()
     // Start speech recognition when streaming starts only if autolistening is enabled
@@ -277,7 +316,15 @@ class StreamSessionViewModel: ObservableObject {
   func stopSession() async {
     stopTimer()
     stopSpeechRecognition()
-    await streamSession.stop()
+    if isUsingPhoneCamera {
+      phoneCameraService.stop()
+      isUsingPhoneCamera = false
+      streamingStatus = .stopped
+      hasReceivedFirstFrame = false
+      currentVideoFrame = nil
+    } else {
+      await streamSession.stop()
+    }
   }
 
   func dismissError() {
@@ -297,7 +344,15 @@ class StreamSessionViewModel: ObservableObject {
   }
 
   func capturePhoto() {
-    streamSession.capturePhoto(format: .jpeg)
+    if isUsingPhoneCamera {
+      // Use the current phone camera frame as captured photo
+      if let frame = currentVideoFrame {
+        capturedPhoto = frame
+        showPhotoPreview = true
+      }
+    } else {
+      streamSession.capturePhoto(format: .jpeg)
+    }
   }
 
   func dismissPhotoPreview() {
@@ -551,13 +606,19 @@ class StreamSessionViewModel: ObservableObject {
       // This helps the recognizer handle both Russian and English
       recognitionRequest.taskHint = .dictation
       
+      // Create a fresh audio engine — reusing a stale engine causes format mismatch
+      // when hardware sample rate changes (e.g. Bluetooth at 16kHz vs default 48kHz)
+      audioEngine = AVAudioEngine()
+
       let inputNode = audioEngine.inputNode
       let recordingFormat = inputNode.outputFormat(forBus: 0)
-      
+      print("🎤 [Speech] Audio format: \(recordingFormat)")
+
       inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+        guard buffer.frameLength > 0 else { return }
         recognitionRequest.append(buffer)
       }
-      
+
       audioEngine.prepare()
       try audioEngine.start()
       
@@ -1016,6 +1077,7 @@ class StreamSessionViewModel: ObservableObject {
         self.currentAIResponseTask = nil
         print("✅ [AI] Backend response: \(result.source) in \(result.durationMs)ms")
         self.speakText(result.text)
+        NotificationService.shared.sendIfBackground(title: "AI Assistant", body: result.text)
       }
     } catch {
       if Task.isCancelled {
@@ -1032,7 +1094,7 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
   }
-  
+
   private func generateAIResponse(for text: String) async {
     print("🟢 [AI] generateAIResponse called with text: \"\(text)\"")
 
@@ -1083,6 +1145,7 @@ class StreamSessionViewModel: ObservableObject {
         self.currentAIResponseTask = nil
         print("✅ [AI] Backend response: \(result.source) in \(result.durationMs)ms")
         self.speakText(result.text)
+        NotificationService.shared.sendIfBackground(title: "AI Assistant", body: result.text)
       }
     } catch {
       if Task.isCancelled {
@@ -1100,7 +1163,7 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
   }
-  
+
   private func updateRecognizedTextDisplay() {
     var allText = recognizedLines.joined(separator: "\n")
     if !currentPartialText.isEmpty {
@@ -1542,6 +1605,7 @@ class StreamSessionViewModel: ObservableObject {
         self.currentAIResponseTask = nil
         print("✅ [AI] Backend response with image: \(result.source) in \(result.durationMs)ms")
         self.speakText(result.text)
+        NotificationService.shared.sendIfBackground(title: "AI Assistant", body: result.text)
       }
     } catch {
       if Task.isCancelled {
