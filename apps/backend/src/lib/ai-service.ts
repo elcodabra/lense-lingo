@@ -11,13 +11,14 @@ export interface AIResponse {
 }
 
 function getLanguageInstruction(lang: Language): string {
+  const shortPrefix = " Keep your answer concise — 1-3 sentences max.";
   switch (lang) {
     case "ru":
-      return " Отвечай на русском языке, так как пользователь спросил на русском.";
+      return shortPrefix + " Отвечай на русском языке.";
     case "es":
-      return " Responde en español, ya que el usuario preguntó en español.";
+      return shortPrefix + " Responde en español.";
     default:
-      return " Respond in English, as the user asked in English.";
+      return shortPrefix + " Respond in English.";
   }
 }
 
@@ -54,35 +55,36 @@ export async function generateAIResponse(
   };
 }
 
+// Fast keyword-based check before calling the AI
+const VISUAL_KEYWORDS: Record<Language, RegExp> = {
+  en: /\b(see|seeing|look|looking|watch|watching|show|read|describe|what.?s this|what.?s that|in front|around me|nearby|camera|photo|picture|image|scan|recognize|identify|translate this|sign|menu|label|screen)\b/i,
+  ru: /\b(вид|виж|смотр|покаж|читай|опиш|что это|что там|перед|вокруг|камер|фото|снимок|сканир|распозна|перевед|вывеск|меню|экран|надпис)\b/i,
+  es: /\b(ve[ros]|mir[ao]|muestra|le[ea]|describ|qué es|qué hay|frente|alrededor|cámara|foto|imagen|escan|reconoc|identific|traduc|letrero|menú|pantalla|señal)\b/i,
+};
+
 function getImageCheckPrompt(text: string, lang: Language): string {
   switch (lang) {
     case "ru":
-      return `Пользователь носит умные очки с камерой. Он спросил: "${text}"
+      return `Пользователь носит умные очки с камерой и спросил: "${text}"
 
-Нужна ли картинка с камеры для ответа на этот запрос?
+Нужна ли картинка с камеры для ответа? Ответь ТОЛЬКО "yes" или "no".
 
-Ответьте ТОЛЬКО "yes" или "no" - больше ничего.
-
-Примеры, где НУЖНА картинка: "Что ты видишь?", "Что я вижу?", "Что видно?", "Расскажи что вижу", "Опиши что вижу"
-Примеры, где НЕ НУЖНА картинка: вопросы о погоде, шутки, вопросы о времени, общие вопросы не о визуальном контенте.`;
+ВАЖНО: Если пользователь спрашивает что он видит, что вокруг, просит описать, прочитать, перевести, распознать что-то — это ВСЕГДА "yes".
+Если это общий вопрос (погода, шутка, время, факты, совет) — "no".`;
     case "es":
-      return `El usuario está usando gafas inteligentes con una cámara. Preguntó: "${text}"
+      return `El usuario lleva gafas inteligentes con cámara y preguntó: "${text}"
 
-¿Esta solicitud necesita ver lo que la cámara está mostrando actualmente?
+¿Se necesita imagen de la cámara para responder? Responde SOLO "yes" o "no".
 
-Responde SOLO "yes" o "no" - nada más.
-
-Ejemplos que NECESITAN imagen: "¿Qué ves?", "¿Qué veo?", "Describe lo que está frente a mí"
-Ejemplos que NO necesitan imagen: preguntas sobre el clima, chistes, preguntas sobre la hora.`;
+IMPORTANTE: Si pregunta qué ve, qué hay alrededor, pide describir, leer, traducir, reconocer algo — SIEMPRE "yes".
+Si es una pregunta general (clima, chistes, hora, datos, consejos) — "no".`;
     default:
-      return `The user is wearing smart glasses with a camera. They asked: "${text}"
+      return `The user is wearing smart glasses with a camera and asked: "${text}"
 
-Does this request need to see what the camera is currently showing?
+Is a camera image needed to answer this? Answer ONLY "yes" or "no".
 
-Answer ONLY "yes" or "no" - nothing else.
-
-Examples that NEED image: "What do you see?", "What do I see?", "Describe what's in front of me"
-Examples that DON'T need image: weather questions, jokes, time questions, general questions.`;
+IMPORTANT: If the user asks what they see, what's around, asks to describe, read, translate, recognize, identify, or look at something — ALWAYS "yes".
+If it's a general question (weather, jokes, time, facts, advice, greetings) — "no".`;
   }
 }
 
@@ -90,6 +92,12 @@ export async function checkImageNeeded(
   text: string,
   lang: Language = "en"
 ): Promise<boolean> {
+  // Fast keyword check first
+  if (VISUAL_KEYWORDS[lang]?.test(text)) {
+    console.log(`[ImageCheck] Keyword match for: "${text}" → yes`);
+    return true;
+  }
+
   const prompt = getImageCheckPrompt(text, lang);
 
   try {
