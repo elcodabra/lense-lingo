@@ -13,6 +13,7 @@
 xcuserdata/
 
 # iOS
+Secrets.xcconfig
 DerivedData/
 *.xcframework/
 build/

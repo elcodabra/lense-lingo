@@ -286,9 +286,10 @@ struct TranslationStreamView: View {
             .cornerRadius(8)
         }
 
-        // Examples toggle
-        if !entry.examples.isEmpty {
-          ExamplesView(examples: entry.examples)
+        // Examples toggle — filter out empty examples from API
+        let validExamples = entry.examples.filter { !$0.source.isEmpty || !$0.target.isEmpty }
+        if !validExamples.isEmpty {
+          ExamplesView(examples: validExamples)
         }
       }
     }

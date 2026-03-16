@@ -415,9 +415,10 @@ struct TranslationEntryCard: View {
         }
       }
 
-      // Examples (collapsed by default)
-      if !entry.examples.isEmpty {
-        ExamplesView(examples: entry.examples)
+      // Examples (collapsed by default) — filter out empty examples from API
+      let validExamples = entry.examples.filter { !$0.source.isEmpty || !$0.target.isEmpty }
+      if !validExamples.isEmpty {
+        ExamplesView(examples: validExamples)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)

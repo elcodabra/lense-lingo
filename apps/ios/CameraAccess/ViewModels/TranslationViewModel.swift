@@ -155,9 +155,12 @@ class TranslationViewModel: ObservableObject {
     stopRecognitionEngine()
 
     do {
+      // Configure audio session only if not already set (PhoneCameraService may have configured it)
       let audioSession = AVAudioSession.sharedInstance()
-      try audioSession.setCategory(.playAndRecord, mode: .spokenAudio,
-                                   options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+      if audioSession.category != .playAndRecord {
+        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio,
+                                     options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
+      }
       try audioSession.setActive(true)
 
       let request = SFSpeechAudioBufferRecognitionRequest()
@@ -466,14 +469,9 @@ class TranslationViewModel: ObservableObject {
     utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
     utterance.volume = 0.8
 
-    do {
-      let audioSession = AVAudioSession.sharedInstance()
-      try audioSession.setCategory(.playAndRecord, mode: .spokenAudio,
-                                   options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .mixWithOthers])
-      try audioSession.setActive(true)
-    } catch {
-      print("⚠️ [Translation TTS] Audio session error: \(error.localizedDescription)")
-    }
+    // Audio session is already configured by startListening/PhoneCameraService
+    // Only ensure it's active — don't reconfigure (conflicts with AVCaptureSession)
+    try? AVAudioSession.sharedInstance().setActive(true)
 
     speechSynthesizer.speak(utterance)
     isSpeaking = true
@@ -488,10 +486,8 @@ class TranslationViewModel: ObservableObject {
 
         await MainActor.run {
           do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .spokenAudio,
-                                         options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
-            try audioSession.setActive(true)
+            // Audio session already configured — just ensure active
+            try? AVAudioSession.sharedInstance().setActive(true)
 
             audioPlayer = try AVAudioPlayer(data: data)
             audioPlayer?.play()
