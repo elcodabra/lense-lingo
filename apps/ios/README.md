@@ -18,6 +18,27 @@ A sample iOS application demonstrating integration with Meta Wearables Device Ac
 - Meta Wearables Device Access Toolkit (included as a dependency)
 - A Meta AI glasses device for testing (optional for development)
 
+## Backend Configuration
+
+The app connects to the LensLingo backend via REST API. Configure the backend token:
+
+**Option A: Xcode build setting (recommended)**
+
+1. In Xcode, select the **CameraAccess** target
+1. Go to **Build Settings** > click **+** > **Add User-Defined Setting**
+1. Name it `BACKEND_API_TOKEN` and set the value to your `SITE_PASSWORD` from Vercel
+
+**Option B: Hardcode in Info.plist**
+
+Set the `BACKEND_API_TOKEN` value directly in `Info.plist`:
+
+```xml
+<key>BACKEND_API_TOKEN</key>
+<string>your-password-here</string>
+```
+
+The backend URL is already set to `https://lense-lingo.vercel.app` in `Info.plist`.
+
 ## Building the app
 
 ### Using Xcode
@@ -26,7 +47,7 @@ A sample iOS application demonstrating integration with Meta Wearables Device Ac
 1. Open the project in Xcode
 1. Select your target device
 1. Click the "Build" button or press `Cmd+B` to build the project
-1. To run the app, click the "Run" button (▶️) or press `Cmd+R`
+1. To run the app, click the "Run" button or press `Cmd+R`
 
 ## Running the app
 
