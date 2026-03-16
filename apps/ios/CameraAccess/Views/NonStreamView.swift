@@ -20,12 +20,37 @@ struct NonStreamView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var wearablesVM: WearablesViewModel
   @State private var sheetHeight: CGFloat = 300
+  @State private var pulseAnimation = false
 
   var body: some View {
     ZStack {
-      Color.black.edgesIgnoringSafeArea(.all)
+      // Gradient background
+      LinearGradient(
+        colors: [
+          Color(red: 0.07, green: 0.07, blue: 0.15),
+          Color(red: 0.10, green: 0.08, blue: 0.22),
+          Color(red: 0.05, green: 0.05, blue: 0.12),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+      .edgesIgnoringSafeArea(.all)
 
-      VStack {
+      // Subtle radial glow behind icon
+      RadialGradient(
+        colors: [
+          Color(red: 0.3, green: 0.5, blue: 1.0).opacity(0.15),
+          Color.clear,
+        ],
+        center: .center,
+        startRadius: 20,
+        endRadius: 200
+      )
+      .offset(y: -60)
+      .edgesIgnoringSafeArea(.all)
+
+      VStack(spacing: 0) {
+        // Top bar
         HStack {
           // Language selector
           Menu {
@@ -42,21 +67,21 @@ struct NonStreamView: View {
               }
             }
           } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
               Image(systemName: "globe")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
               Text(wearablesVM.selectedLanguage.displayName)
-                .font(.system(size: 12))
+                .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(.white.opacity(0.8))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.2))
-            .cornerRadius(6)
+            .foregroundColor(.white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.12))
+            .cornerRadius(20)
           }
-          
+
           Spacer()
-          
+
           Menu {
             Button("Disconnect", role: .destructive) {
               wearablesVM.disconnectGlasses()
@@ -64,83 +89,147 @@ struct NonStreamView: View {
             .disabled(wearablesVM.registrationState != .registered)
           } label: {
             Image(systemName: "gearshape")
-              .resizable()
-              .aspectRatio(contentMode: .fit)
-              .foregroundColor(.white)
-              .frame(width: 24, height: 24)
+              .font(.system(size: 18))
+              .foregroundColor(.white.opacity(0.7))
+              .frame(width: 36, height: 36)
+              .background(Color.white.opacity(0.08))
+              .cornerRadius(18)
           }
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
 
         Spacer()
 
-        VStack(spacing: 12) {
-          Image(.cameraAccessIcon)
-            .resizable()
-            .renderingMode(.template)
-            .foregroundColor(.white)
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 120)
+        // Main content
+        VStack(spacing: 20) {
+          // Animated icon
+          ZStack {
+            // Pulse ring
+            Circle()
+              .stroke(Color(red: 0.4, green: 0.6, blue: 1.0).opacity(0.2), lineWidth: 1.5)
+              .frame(width: 140, height: 140)
+              .scaleEffect(pulseAnimation ? 1.15 : 1.0)
+              .opacity(pulseAnimation ? 0 : 0.6)
+              .animation(
+                .easeInOut(duration: 2.0).repeatForever(autoreverses: false),
+                value: pulseAnimation
+              )
+
+            Circle()
+              .fill(Color(red: 0.3, green: 0.5, blue: 1.0).opacity(0.1))
+              .frame(width: 120, height: 120)
+
+            Image(.cameraAccessIcon)
+              .resizable()
+              .renderingMode(.template)
+              .foregroundStyle(
+                LinearGradient(
+                  colors: [
+                    Color(red: 0.5, green: 0.7, blue: 1.0),
+                    Color(red: 0.3, green: 0.5, blue: 0.9),
+                  ],
+                  startPoint: .top,
+                  endPoint: .bottom
+                )
+              )
+              .aspectRatio(contentMode: .fit)
+              .frame(width: 70)
+          }
+          .onAppear { pulseAnimation = true }
+
+          // Title
+          Text("LensLingo")
+            .font(.system(size: 28, weight: .bold))
+            .foregroundStyle(
+              LinearGradient(
+                colors: [.white, Color(red: 0.7, green: 0.8, blue: 1.0)],
+                startPoint: .leading,
+                endPoint: .trailing
+              )
+            )
 
           Text("Stream Your Glasses Camera")
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundColor(.white)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundColor(.white.opacity(0.9))
 
-          Text("Tap the Start streaming button to stream video from your glasses or use the camera button to take a photo from your glasses.")
-            .font(.system(size: 15))
+          Text("Tap Start to stream video from your glasses\nor use the camera button to take a photo.")
+            .font(.system(size: 14))
             .multilineTextAlignment(.center)
-            .foregroundColor(.white)
+            .foregroundColor(.white.opacity(0.5))
+            .lineSpacing(3)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 32)
 
         Spacer()
 
-        HStack(spacing: 8) {
-          Image(systemName: "hourglass")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .foregroundColor(.white.opacity(0.7))
-            .frame(width: 16, height: 16)
-
-          Text("Waiting for an active device")
-            .font(.system(size: 14))
-            .foregroundColor(.white.opacity(0.7))
-        }
-        .padding(.bottom, 12)
-        .opacity(viewModel.hasActiveDevice ? 0 : 1)
-        
-        // Video display toggle for energy saving
-        HStack {
-          Toggle(isOn: Binding(
-            get: { viewModel.shouldShowVideoDisplay },
-            set: { viewModel.shouldShowVideoDisplay = $0 }
-          )) {
+        // Status & controls
+        VStack(spacing: 16) {
+          // Waiting indicator
+          if !viewModel.hasActiveDevice {
             HStack(spacing: 8) {
-              Image(systemName: "video.fill")
-                .font(.system(size: 14))
-              Text("Show camera display")
-                .font(.system(size: 14, weight: .medium))
-            }
-            .foregroundColor(.white)
-          }
-          .toggleStyle(SwitchToggleStyle(tint: .green))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.1))
-        .cornerRadius(12)
-        .padding(.bottom, 12)
+              ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
+                .scaleEffect(0.8)
 
-        CustomButton(
-          title: "Start streaming",
-          style: .primary,
-          isDisabled: !viewModel.hasActiveDevice
-        ) {
-          Task {
-            await viewModel.handleStartStreaming()
+              Text("Waiting for an active device")
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.5))
+            }
+            .transition(.opacity)
           }
+
+          // Video display toggle
+          HStack {
+            Toggle(isOn: Binding(
+              get: { viewModel.shouldShowVideoDisplay },
+              set: { viewModel.shouldShowVideoDisplay = $0 }
+            )) {
+              HStack(spacing: 8) {
+                Image(systemName: "video.fill")
+                  .font(.system(size: 13))
+                Text("Show camera display")
+                  .font(.system(size: 14, weight: .medium))
+              }
+              .foregroundColor(.white.opacity(0.85))
+            }
+            .toggleStyle(SwitchToggleStyle(tint: Color(red: 0.3, green: 0.7, blue: 0.5)))
+          }
+          .padding(.horizontal, 18)
+          .padding(.vertical, 12)
+          .background(Color.white.opacity(0.08))
+          .cornerRadius(16)
+
+          // Start button
+          Button {
+            Task {
+              await viewModel.handleStartStreaming()
+            }
+          } label: {
+            Text("Start streaming")
+              .font(.system(size: 16, weight: .semibold))
+              .foregroundColor(.white)
+              .frame(maxWidth: .infinity)
+              .frame(height: 56)
+              .background(
+                LinearGradient(
+                  colors: [
+                    Color(red: 0.25, green: 0.5, blue: 1.0),
+                    Color(red: 0.35, green: 0.4, blue: 0.95),
+                  ],
+                  startPoint: .leading,
+                  endPoint: .trailing
+                )
+              )
+              .cornerRadius(28)
+              .shadow(color: Color(red: 0.3, green: 0.5, blue: 1.0).opacity(0.3), radius: 12, y: 4)
+          }
+          .disabled(!viewModel.hasActiveDevice)
+          .opacity(viewModel.hasActiveDevice ? 1.0 : 0.5)
         }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 32)
       }
-      .padding(.all, 24)
     }
     .sheet(isPresented: $wearablesVM.showGettingStartedSheet) {
       if #available(iOS 16.0, *) {
