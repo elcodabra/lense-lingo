@@ -180,9 +180,6 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
     
-    // Connect to backend WebSocket
-    BackendService.shared.connect()
-
     // Initialize speech recognizer
     setupSpeechRecognition()
     

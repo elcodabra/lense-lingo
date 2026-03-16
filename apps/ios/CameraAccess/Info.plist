@@ -69,12 +69,9 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to microphone to recognize your speech.</string>
 	<key>BACKEND_URL</key>
-	<string>http://192.168.1.242:3000</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
+	<string>https://lense-lingo.vercel.app</string>
+	<key>BACKEND_API_TOKEN</key>
+	<string>$(BACKEND_API_TOKEN)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

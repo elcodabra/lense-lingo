@@ -9,9 +9,24 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // API routes: accept Bearer token OR cookie
+  if (req.nextUrl.pathname.startsWith("/api/")) {
+    const authHeader = req.headers.get("authorization") ?? "";
+    const token = authHeader.replace("Bearer ", "");
+    if (token === password) {
+      return NextResponse.next();
+    }
+  }
+
+  // Web: accept cookie
   const cookie = req.cookies.get("auth")?.value;
   if (cookie === password) {
     return NextResponse.next();
+  }
+
+  // API routes return 401, web redirects to login
+  if (req.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   return NextResponse.redirect(new URL("/login", req.url));

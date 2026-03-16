@@ -9,8 +9,8 @@
 //
 // BackendService.swift
 //
-// WebSocket client for LensLingo backend using Socket.IO protocol.
-// Replaces direct Gemini/ChatGPT API calls — all AI processing happens on the backend.
+// REST client for LensLingo backend.
+// All AI processing happens on the backend via REST API.
 //
 
 import Foundation
@@ -28,17 +28,15 @@ class BackendService: NSObject {
   }
 
   enum BackendError: LocalizedError {
-    case notConnected
     case noBackendURL
-    case timeout
+    case unauthorized
     case serverError(String)
     case invalidResponse
 
     var errorDescription: String? {
       switch self {
-      case .notConnected:    return "Not connected to backend server."
       case .noBackendURL:    return "BACKEND_URL not configured in Info.plist."
-      case .timeout:         return "Backend request timed out."
+      case .unauthorized:    return "Invalid API token."
       case .serverError(let msg): return "Backend error: \(msg)"
       case .invalidResponse: return "Invalid response from backend."
       }
@@ -48,248 +46,88 @@ class BackendService: NSObject {
   // MARK: - Properties
 
   private let backendURL: String
-  private var webSocketTask: URLSessionWebSocketTask?
-  private var urlSession: URLSession!
-  private var sid: String?
-  private var pingTimer: Timer?
-  private var pendingCallbacks: [String: (Result<[String: Any], Error>) -> Void] = [:]
-  private var requestCounter = 0
-  private(set) var isConnected = false
-  private var reconnectAttempts = 0
-  private let maxReconnectAttempts = 5
+  private let apiToken: String
+  private let session: URLSession
 
   // MARK: - Init
 
   override init() {
-    // Get backend URL from Info.plist
+    // Get config from Info.plist
+    var url = ""
+    var token = ""
     if let path = Bundle.main.path(forResource: "Info", ofType: "plist"),
-       let plist = NSDictionary(contentsOfFile: path),
-       let url = plist["BACKEND_URL"] as? String, !url.isEmpty {
-      self.backendURL = url
-    } else {
-      self.backendURL = ProcessInfo.processInfo.environment["BACKEND_URL"] ?? ""
+       let plist = NSDictionary(contentsOfFile: path) {
+      url = plist["BACKEND_URL"] as? String ?? ""
+      token = plist["BACKEND_API_TOKEN"] as? String ?? ""
     }
+    if url.isEmpty {
+      url = ProcessInfo.processInfo.environment["BACKEND_URL"] ?? ""
+    }
+    if token.isEmpty {
+      token = ProcessInfo.processInfo.environment["BACKEND_API_TOKEN"] ?? ""
+    }
+    self.backendURL = url
+    self.apiToken = token
+
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest = 30
+    self.session = URLSession(configuration: config)
+
     super.init()
-    self.urlSession = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
   }
 
-  // MARK: - Connection
+  // MARK: - Private helpers
 
-  func connect() {
+  private func makeRequest(path: String, body: [String: Any]) async throws -> [String: Any] {
     guard !backendURL.isEmpty else {
-      print("🔴 [Backend] No BACKEND_URL configured")
-      return
-    }
-    guard !isConnected else { return }
-
-    // Connect directly via WebSocket (skip polling handshake)
-    let wsBase = backendURL
-      .replacingOccurrences(of: "http://", with: "ws://")
-      .replacingOccurrences(of: "https://", with: "wss://")
-
-    let wsURLString = "\(wsBase)/socket.io/?EIO=4&transport=websocket"
-    guard let wsURL = URL(string: wsURLString) else {
-      print("🔴 [Backend] Invalid WebSocket URL: \(wsURLString)")
-      return
+      throw BackendError.noBackendURL
     }
 
-    print("🔌 [Backend] Connecting WebSocket: \(wsURLString)")
-
-    webSocketTask = urlSession.webSocketTask(with: wsURL)
-    webSocketTask?.resume()
-    listenForMessages()
-  }
-
-  func disconnect() {
-    webSocketTask?.cancel(with: .normalClosure, reason: nil)
-    webSocketTask = nil
-    isConnected = false
-    sid = nil
-    reconnectAttempts = 0
-
-    // Fail all pending callbacks
-    let pending = pendingCallbacks
-    pendingCallbacks.removeAll()
-    for (_, callback) in pending {
-      callback(.failure(BackendError.notConnected))
+    let urlString = backendURL.hasSuffix("/") ? "\(backendURL)\(path)" : "\(backendURL)/\(path)"
+    guard let url = URL(string: urlString) else {
+      throw BackendError.noBackendURL
     }
 
-    print("🔌 [Backend] Disconnected")
-  }
-
-  private func scheduleReconnect() {
-    guard reconnectAttempts < maxReconnectAttempts else {
-      print("🔴 [Backend] Max reconnect attempts reached")
-      return
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if !apiToken.isEmpty {
+      request.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
     }
-    reconnectAttempts += 1
-    let delay = Double(min(reconnectAttempts * 2, 10))
-    print("🔄 [Backend] Reconnecting in \(delay)s (attempt \(reconnectAttempts))")
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-      self?.connect()
-    }
-  }
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-  // MARK: - Socket.IO messaging
+    let (data, response) = try await session.data(for: request)
 
-  private func send(raw text: String) {
-    print("📤 [Backend] WS send: \(text.prefix(120))")
-    webSocketTask?.send(.string(text)) { error in
-      if let error = error {
-        print("🔴 [Backend] Send error: \(error.localizedDescription)")
-      }
-    }
-  }
-
-  /// Emit a Socket.IO event with JSON payload
-  private func emit(_ event: String, data: [String: Any]) {
-    // Build the Socket.IO packet: 42["eventName",{...data...}]
-    let array: [Any] = [event, data]
-    guard let jsonData = try? JSONSerialization.data(withJSONObject: array),
-          let jsonStr = String(data: jsonData, encoding: .utf8) else {
-      print("🔴 [Backend] Failed to serialize event data")
-      return
-    }
-    let packet = "42\(jsonStr)"
-    send(raw: packet)
-  }
-
-  private func listenForMessages() {
-    webSocketTask?.receive { [weak self] result in
-      guard let self = self else { return }
-
-      switch result {
-      case .success(let message):
-        switch message {
-        case .string(let text):
-          self.handleMessage(text)
-        case .data(let data):
-          if let text = String(data: data, encoding: .utf8) {
-            self.handleMessage(text)
-          }
-        @unknown default:
-          break
-        }
-        // Continue listening
-        self.listenForMessages()
-
-      case .failure(let error):
-        print("🔴 [Backend] WebSocket receive error: \(error.localizedDescription)")
-        self.isConnected = false
-        self.scheduleReconnect()
-      }
-    }
-  }
-
-  private func handleMessage(_ text: String) {
-    print("📥 [Backend] WS recv: \(text.prefix(200))")
-    // EIO4 packet types: 0=open, 1=close, 2=ping, 3=pong, 4=message
-    // Socket.IO packet types (after 4): 0=connect, 1=disconnect, 2=event, 3=ack
-
-    // EIO4 open packet: 0{"sid":"...","upgrades":[],...}
-    if text.hasPrefix("0{") {
-      if let jsonData = String(text.dropFirst()).data(using: .utf8),
-         let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-         let sid = json["sid"] as? String {
-        self.sid = sid
-        let pingInterval = (json["pingInterval"] as? Int) ?? 25000
-        print("✅ [Backend] Got session ID: \(sid), pingInterval: \(pingInterval)ms")
-
-        // Send Socket.IO connect to "/" namespace
-        send(raw: "40")
-      }
-      return
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw BackendError.invalidResponse
     }
 
-    if text == "3probe" {
-      send(raw: "5")
-      send(raw: "40")
-      return
+    if httpResponse.statusCode == 401 {
+      throw BackendError.unauthorized
     }
 
-    if text == "2" {
-      // EIO ping, respond with pong
-      send(raw: "3")
-      return
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw BackendError.invalidResponse
     }
 
-    if text == "3" {
-      // EIO pong
-      return
+    if let error = json["error"] as? String {
+      throw BackendError.serverError(error)
     }
 
-    if text.hasPrefix("40") {
-      // Socket.IO connect acknowledgment
-      isConnected = true
-      reconnectAttempts = 0
-      print("✅ [Backend] Socket.IO connected to namespace")
-      return
-    }
-
-    if text.hasPrefix("42") {
-      // Socket.IO event message: 42["eventName", {data}]
-      let jsonPart = String(text.dropFirst(2))
-      guard let jsonData = jsonPart.data(using: .utf8),
-            let arr = try? JSONSerialization.jsonObject(with: jsonData) as? [Any],
-            let eventName = arr.first as? String else {
-        return
-      }
-
-      let eventData = arr.count > 1 ? arr[1] as? [String: Any] : nil
-      handleEvent(eventName, data: eventData ?? [:])
-      return
-    }
-  }
-
-  private func handleEvent(_ event: String, data: [String: Any]) {
-    print("📥 [Backend] Event: \(event), keys: \(data.keys.sorted()), pendingCallbacks: \(pendingCallbacks.keys.sorted())")
-
-    // Route to pending callback by requestId
-    guard let requestId = data["requestId"] as? String else { return }
-
-    switch event {
-    case "generate:result":
-      pendingCallbacks[requestId]?(.success(data))
-      pendingCallbacks.removeValue(forKey: requestId)
-
-    case "generate:error":
-      let errorMsg = data["error"] as? String ?? "Unknown error"
-      pendingCallbacks[requestId]?(.failure(BackendError.serverError(errorMsg)))
-      pendingCallbacks.removeValue(forKey: requestId)
-
-    case "check-image-needed:result":
-      pendingCallbacks[requestId]?(.success(data))
-      pendingCallbacks.removeValue(forKey: requestId)
-
-    case "check-image-needed:error":
-      let errorMsg = data["error"] as? String ?? "Unknown error"
-      pendingCallbacks[requestId]?(.failure(BackendError.serverError(errorMsg)))
-      pendingCallbacks.removeValue(forKey: requestId)
-
-    default:
-      break
-    }
+    return json
   }
 
   // MARK: - Public API
 
   /// Generate an AI response for the given text
   func generateResponse(for text: String, language: String = "en", image: UIImage? = nil) async throws -> AIResponse {
-    guard isConnected else {
-      throw BackendError.notConnected
-    }
-
-    requestCounter += 1
-    let requestId = "ios-\(requestCounter)"
-
-    var payload: [String: Any] = [
+    var body: [String: Any] = [
       "text": text,
       "language": language,
-      "requestId": requestId,
     ]
 
     if let image = image, let imageData = image.jpegData(compressionQuality: 0.8) {
-      payload["image"] = [
+      body["image"] = [
         "base64": imageData.base64EncodedString(),
         "mimeType": "image/jpeg",
       ]
@@ -297,84 +135,26 @@ class BackendService: NSObject {
 
     print("📤 [Backend] generate: \"\(text.prefix(50))\" lang=\(language) hasImage=\(image != nil)")
 
-    return try await withCheckedThrowingContinuation { continuation in
-      // Set timeout
-      let timeoutItem = DispatchWorkItem { [weak self] in
-        self?.pendingCallbacks.removeValue(forKey: requestId)
-        continuation.resume(throwing: BackendError.timeout)
-      }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: timeoutItem)
+    let json = try await makeRequest(path: "api/generate", body: body)
 
-      pendingCallbacks[requestId] = { result in
-        timeoutItem.cancel()
-        switch result {
-        case .success(let data):
-          let text = data["text"] as? String ?? ""
-          let source = data["source"] as? String ?? "unknown"
-          let durationMs = data["durationMs"] as? Int ?? 0
-          continuation.resume(returning: AIResponse(text: text, source: source, durationMs: durationMs))
+    let responseText = json["text"] as? String ?? ""
+    let source = json["source"] as? String ?? "unknown"
+    let durationMs = json["durationMs"] as? Int ?? 0
 
-        case .failure(let error):
-          continuation.resume(throwing: error)
-        }
-      }
-
-      emit("generate", data: payload)
-    }
+    return AIResponse(text: responseText, source: source, durationMs: durationMs)
   }
 
   /// Check if the user's request needs a camera image
   func checkImageNeeded(for text: String, language: String = "en") async throws -> Bool {
-    guard isConnected else {
-      throw BackendError.notConnected
-    }
-
-    requestCounter += 1
-    let requestId = "ios-\(requestCounter)"
-
-    let payload: [String: Any] = [
+    let body: [String: Any] = [
       "text": text,
       "language": language,
-      "requestId": requestId,
     ]
 
     print("📤 [Backend] check-image-needed: \"\(text.prefix(50))\"")
 
-    return try await withCheckedThrowingContinuation { continuation in
-      let timeoutItem = DispatchWorkItem { [weak self] in
-        self?.pendingCallbacks.removeValue(forKey: requestId)
-        continuation.resume(throwing: BackendError.timeout)
-      }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 15, execute: timeoutItem)
+    let json = try await makeRequest(path: "api/check-image-needed", body: body)
 
-      pendingCallbacks[requestId] = { result in
-        timeoutItem.cancel()
-        switch result {
-        case .success(let data):
-          let needed = data["imageNeeded"] as? Bool ?? false
-          continuation.resume(returning: needed)
-        case .failure(let error):
-          continuation.resume(throwing: error)
-        }
-      }
-
-      emit("check-image-needed", data: payload)
-    }
-  }
-}
-
-// MARK: - URLSessionWebSocketDelegate
-
-extension BackendService: URLSessionWebSocketDelegate {
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                  didOpenWithProtocol protocol: String?) {
-    print("✅ [Backend] WebSocket connection opened")
-  }
-
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                  didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-    print("🔌 [Backend] WebSocket closed: \(closeCode)")
-    isConnected = false
-    scheduleReconnect()
+    return json["imageNeeded"] as? Bool ?? false
   }
 }
