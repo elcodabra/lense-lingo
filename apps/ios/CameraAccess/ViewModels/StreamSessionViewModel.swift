@@ -180,6 +180,9 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
     
+    // Check backend connectivity
+    Task { await BackendService.shared.healthCheck() }
+
     // Initialize speech recognizer
     setupSpeechRecognition()
     

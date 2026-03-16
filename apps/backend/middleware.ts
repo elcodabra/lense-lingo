@@ -4,8 +4,8 @@ export function middleware(req: NextRequest) {
   const password = process.env.SITE_PASSWORD;
   if (!password) return NextResponse.next(); // no password set = open access
 
-  // Skip auth for login page and login API
-  if (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/api/auth") {
+  // Skip auth for login page, login API, and health check
+  if (req.nextUrl.pathname === "/login" || req.nextUrl.pathname === "/api/auth" || req.nextUrl.pathname === "/api/health") {
     return NextResponse.next();
   }
 

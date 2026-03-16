@@ -117,6 +117,48 @@ class BackendService: NSObject {
     return json
   }
 
+  // MARK: - Health Check
+
+  /// Check backend connectivity and log status
+  func healthCheck() async {
+    print("🌍 [Backend] healthCheck called")
+    print("🌍 [Backend] URL: \(backendURL.isEmpty ? "(not configured)" : backendURL)")
+    print("🌍 [Backend] API token: \(apiToken.isEmpty ? "(not set)" : "configured (\(apiToken.count) chars)")")
+
+    guard !backendURL.isEmpty else {
+      print("🔴 [Backend] Health check failed: BACKEND_URL not configured in Info.plist")
+      return
+    }
+
+    let urlString = backendURL.hasSuffix("/") ? "\(backendURL)api/health" : "\(backendURL)/api/health"
+    guard let url = URL(string: urlString) else {
+      print("🔴 [Backend] Health check failed: invalid URL")
+      return
+    }
+
+    do {
+      let (data, response) = try await session.data(from: url)
+      guard let httpResponse = response as? HTTPURLResponse else {
+        print("🔴 [Backend] Health check failed: invalid response")
+        return
+      }
+
+      if httpResponse.statusCode == 200,
+         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         let status = json["status"] as? String {
+        print("✅ [Backend] Health check passed")
+        print("   Status: \(status)")
+        print("   Service: \(json["service"] as? String ?? "unknown")")
+        print("   Server time: \(json["timestamp"] as? String ?? "unknown")")
+        print("   Transport: REST")
+      } else {
+        print("🔴 [Backend] Health check failed: HTTP \(httpResponse.statusCode)")
+      }
+    } catch {
+      print("🔴 [Backend] Health check failed: \(error.localizedDescription)")
+    }
+  }
+
   // MARK: - Public API
 
   /// Generate an AI response for the given text
