@@ -55,69 +55,66 @@ export async function generateAIResponse(
   };
 }
 
-// Fast keyword-based check before calling the AI
-const VISUAL_KEYWORDS: Record<Language, RegExp> = {
-  en: /\b(see|seeing|look|looking|watch|watching|show|read|describe|what.?s this|what.?s that|in front|around me|nearby|camera|photo|picture|image|scan|recognize|identify|translate this|sign|menu|label|screen)\b/i,
-  ru: /\b(вид|виж|смотр|покаж|читай|опиш|что это|что там|перед|вокруг|камер|фото|снимок|сканир|распозна|перевед|вывеск|меню|экран|надпис)\b/i,
-  es: /\b(ve[ros]|mir[ao]|muestra|le[ea]|describ|qué es|qué hay|frente|alrededor|cámara|foto|imagen|escan|reconoc|identific|traduc|letrero|menú|pantalla|señal)\b/i,
-};
+// Universal keyword check — covers EN, RU, ES and common patterns in any language.
+// All patterns are combined into one regex to avoid per-language misses.
+const VISUAL_KEYWORDS = new RegExp([
+  // English
+  "see", "seeing", "seen", "look", "looking", "watch", "watching",
+  "show me", "read", "reading", "describe", "what.?s this", "what.?s that",
+  "what is this", "what is that", "what are these", "what are those",
+  "in front", "around me", "nearby", "before me",
+  "camera", "photo", "picture", "image", "snap", "capture",
+  "scan", "recognize", "identify", "detect", "point",
+  "translate", "sign", "menu", "label", "screen", "text on", "written",
+  "color", "colour", "brand", "price", "how much", "how many",
+  "where am i", "what place", "what building", "what street",
+  "what flower", "what plant", "what animal", "what dog", "what bird",
+  "what food", "what dish",
+  // Russian
+  "вид", "виж", "вижу", "видишь", "видно", "видеть",
+  "смотр", "смотри", "покаж", "покажи", "глянь", "глядь",
+  "читай", "прочитай", "прочти",
+  "опиш", "опиши", "расскаж",
+  "что это", "что там", "что здесь", "что за", "это что",
+  "перед", "вокруг", "рядом", "передо мной",
+  "камер", "фото", "снимок", "снимк", "картинк",
+  "сканир", "распозна", "определи", "узнай",
+  "перевед", "перевод", "переведи",
+  "вывеск", "меню", "экран", "надпис", "табличк", "ценник",
+  "цвет", "бренд", "марк", "сколько стоит", "какая цена",
+  "где я", "что за место", "какое здание", "какая улица",
+  // Spanish
+  "ver", "veo", "ves", "vemos", "mira", "miro", "mirando",
+  "muestra", "mostrar", "lee", "leer", "leyendo",
+  "describ", "qué es esto", "qué es eso", "qué hay",
+  "frente", "alrededor", "cerca",
+  "cámara", "foto", "imagen", "captura",
+  "escan", "reconoc", "identific", "detect",
+  "traduc", "traducir", "letrero", "menú", "pantalla", "señal", "cartel",
+  "color", "marca", "precio", "cuánto cuesta",
+  "dónde estoy", "qué lugar", "qué edificio",
+].map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i");
 
-function getImageCheckPrompt(text: string, lang: Language): string {
-  switch (lang) {
-    case "ru":
-      return `Пользователь носит умные очки с камерой и спросил: "${text}"
+// Non-visual patterns — general questions that never need an image
+const NON_VISUAL_KEYWORDS = /\b(weather|time|joke|chiste|шутк|погод|врем|час|hora|clima|tell me about|cuéntame|расскаж[иь] (мне )?о|how to|cómo|как (сделать|готовить)|recipe|receta|рецепт|capital of|столиц|who is|quién es|кто тако[йе]|calculate|calcul|посчитай|history|histori|истори)\b/i;
 
-Нужна ли картинка с камеры для ответа? Ответь ТОЛЬКО "yes" или "no".
-
-ВАЖНО: Если пользователь спрашивает что он видит, что вокруг, просит описать, прочитать, перевести, распознать что-то — это ВСЕГДА "yes".
-Если это общий вопрос (погода, шутка, время, факты, совет) — "no".`;
-    case "es":
-      return `El usuario lleva gafas inteligentes con cámara y preguntó: "${text}"
-
-¿Se necesita imagen de la cámara para responder? Responde SOLO "yes" o "no".
-
-IMPORTANTE: Si pregunta qué ve, qué hay alrededor, pide describir, leer, traducir, reconocer algo — SIEMPRE "yes".
-Si es una pregunta general (clima, chistes, hora, datos, consejos) — "no".`;
-    default:
-      return `The user is wearing smart glasses with a camera and asked: "${text}"
-
-Is a camera image needed to answer this? Answer ONLY "yes" or "no".
-
-IMPORTANT: If the user asks what they see, what's around, asks to describe, read, translate, recognize, identify, or look at something — ALWAYS "yes".
-If it's a general question (weather, jokes, time, facts, advice, greetings) — "no".`;
-  }
-}
-
-export async function checkImageNeeded(
+export function checkImageNeeded(
   text: string,
-  lang: Language = "en"
-): Promise<boolean> {
-  // Fast keyword check first
-  if (VISUAL_KEYWORDS[lang]?.test(text)) {
-    console.log(`[ImageCheck] Keyword match for: "${text}" → yes`);
+  _lang: Language = "en"
+): boolean {
+  // If it matches a non-visual pattern first, skip image
+  if (NON_VISUAL_KEYWORDS.test(text)) {
+    console.log(`[ImageCheck] Non-visual keyword match: "${text}" → no`);
+    return false;
+  }
+
+  // Check universal visual keywords
+  if (VISUAL_KEYWORDS.test(text)) {
+    console.log(`[ImageCheck] Visual keyword match: "${text}" → yes`);
     return true;
   }
 
-  const prompt = getImageCheckPrompt(text, lang);
-
-  try {
-    const response = await geminiGenerate(prompt);
-    const first = response
-      .toLowerCase()
-      .trim()
-      .split(/[\s.,!?]+/)[0];
-    return first === "yes";
-  } catch {
-    // If Gemini fails, try ChatGPT
-    try {
-      const response = await chatgptGenerate(prompt);
-      const first = response
-        .toLowerCase()
-        .trim()
-        .split(/[\s.,!?]+/)[0];
-      return first === "yes";
-    } catch {
-      return false;
-    }
-  }
+  // Default: no image needed (no API call)
+  console.log(`[ImageCheck] No keyword match: "${text}" → no`);
+  return false;
 }
